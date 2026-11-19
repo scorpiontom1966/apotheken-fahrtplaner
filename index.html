@@ -93,6 +93,9 @@
         <button class="secondary" id="manBtn">Übernehmen</button>
       </div>
     </details>
+    <div class="row" style="margin-top:12px">
+      <div><label for="owner">Inhaber/-in (optional)</label><input id="owner" placeholder="z. B. Frau Dr. Schmidt"></div>
+    </div>
   </section>
 
   <section class="card">
@@ -295,6 +298,10 @@
       + (plan.traffic ? `, Route ${x.raw} Min. + ${plan.traffic} % Verkehr` : "")
       + `) + ${plan.buffer} Min. Puffer`;
   }
+  function apptTitle(){
+    const owner = $("owner").value.trim();
+    return owner ? `${target.name} – ${owner}` : target.name;
+  }
   function renderPlan(){
     const p = plan, tl = $("timeline"); tl.innerHTML = "";
     const add = (cls, t, title, sub) => {
@@ -304,10 +311,11 @@
       tl.appendChild(d);
     };
     add("drive", `${fmt(p.depart)} – ${fmt(p.apptStart)}`, `Anfahrt · Block ${p.o.total} Min.`, driveText(p.o));
-    add("", `${fmt(p.apptStart)} – ${fmt(p.apptEnd)}`, `Termin ${target.name}`, target.address + ($("incAppt").checked ? "" : "  (nicht in der ICS enthalten)"));
+    add("", `${fmt(p.apptStart)} – ${fmt(p.apptEnd)}`, `Termin ${apptTitle()}`, target.address + ($("incAppt").checked ? "" : "  (nicht in der ICS enthalten)"));
     add("drive", `${fmt(p.apptEnd)} – ${fmt(p.homeArr)}`, `Rückfahrt · Block ${p.b.total} Min.`, driveText(p.b));
     $("result").style.display = "block";
   }
+  $("owner").addEventListener("input", () => { if (plan) renderPlan(); });
   $("incAppt").addEventListener("change", () => { if (plan) renderPlan(); });
 
   // ---- ICS ----
@@ -336,19 +344,22 @@
   }
   function buildIcs(){
     const p = plan, homeL = $("home").value.trim();
+    const owner = $("owner").value.trim();
     const tgtL = `${target.name}, ${target.address}`;
+    const apptT = apptTitle();
+    const ownerLine = owner ? `Inhaber/-in: ${owner}\n` : "";
     const alarm = +$("alarm").value || 0;
     const lines = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Apotheken-Fahrtplaner//DE","CALSCALE:GREGORIAN","METHOD:PUBLISH"];
     lines.push(...vevent(p.depart, p.apptStart,
-      `🚗 Anfahrt ${target.name} (${p.o.drive} Min. + ${p.buffer} Puffer)`,
+      `🚗 Anfahrt ${apptT} (${p.o.drive} Min. + ${p.buffer} Puffer)`,
       tgtL,
-      `Abfahrt: ${fmt(p.depart)} Uhr\nKalkulierte Fahrzeit: ${driveText(p.o)}\nBlock gesamt: ${p.o.total} Min.\nVon: ${homeL}\nNach: ${tgtL}\nTermin: ${fmt(p.apptStart)} Uhr\nRoute: ${mapsLink(homeL, tgtL)}`,
+      `Abfahrt: ${fmt(p.depart)} Uhr\nKalkulierte Fahrzeit: ${driveText(p.o)}\nBlock gesamt: ${p.o.total} Min.\nVon: ${homeL}\nNach: ${tgtL}\n${ownerLine}Termin: ${fmt(p.apptStart)} Uhr\nRoute: ${mapsLink(homeL, tgtL)}`,
       alarm));
-    if ($("incAppt").checked) lines.push(...vevent(p.apptStart, p.apptEnd, `Termin ${target.name}`, tgtL, `Apothekentermin\n${tgtL}`, 0));
+    if ($("incAppt").checked) lines.push(...vevent(p.apptStart, p.apptEnd, `Termin ${apptT}`, tgtL, `Apothekentermin\n${tgtL}\n${ownerLine}`, 0));
     lines.push(...vevent(p.apptEnd, p.homeArr,
-      `🚗 Rückfahrt von ${target.name} (${p.b.drive} Min. + ${p.buffer} Puffer)`,
+      `🚗 Rückfahrt von ${apptT} (${p.b.drive} Min. + ${p.buffer} Puffer)`,
       homeL,
-      `Kalkulierte Fahrzeit: ${driveText(p.b)}\nBlock gesamt: ${p.b.total} Min.\nVoraussichtlich zu Hause: ${fmt(p.homeArr)} Uhr\nVon: ${tgtL}\nNach: ${homeL}\nRoute: ${mapsLink(tgtL, homeL)}`,
+      `Kalkulierte Fahrzeit: ${driveText(p.b)}\nBlock gesamt: ${p.b.total} Min.\nVoraussichtlich zu Hause: ${fmt(p.homeArr)} Uhr\nVon: ${tgtL}\nNach: ${homeL}\n${ownerLine}Route: ${mapsLink(tgtL, homeL)}`,
       0));
     lines.push("END:VCALENDAR");
     return lines.map(fold).join("\r\n") + "\r\n";
