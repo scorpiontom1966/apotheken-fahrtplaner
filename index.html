@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Apotheken-Fahrtplaner – Terminblocker als ICS</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b7a4b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Fahrtplaner">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#fff; --ink:#1d2330; --muted:#667085; --line:#e3e6eb;
+    --accent:#0b7a4b; --accent-ink:#fff; --warn:#b54708; --err:#b42318; --chip:#eef7f2;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#14171c; --card:#1d2128; --ink:#e8eaee; --muted:#9aa3b2; --line:#2c323c;
+           --accent:#2fb37a; --accent-ink:#0b1410; --chip:#1c2e25; --warn:#f0a35c; --err:#f97066; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  main{max-width:760px;margin:0 auto;padding:28px 18px 60px}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 22px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 12px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  label{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
+  input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+  input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+  .row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+  .row > div{flex:1;min-width:180px}
+  button{font:inherit;border:0;border-radius:8px;padding:10px 16px;cursor:pointer;background:var(--accent);color:var(--accent-ink);font-weight:600}
+  button.secondary{background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:500}
+  button:disabled{opacity:.5;cursor:default}
+  .hits{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+  .hit{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border:1px solid var(--line);border-radius:8px;cursor:pointer}
+  .hit:hover{border-color:var(--accent)}
+  .hit.sel{border-color:var(--accent);background:var(--chip)}
+  .hit input{width:auto;margin-top:4px}
+  .hit b{display:block}
+  .hit small{color:var(--muted)}
+  .msg{margin-top:10px;font-size:14px}
+  .msg.err{color:var(--err)} .msg.warn{color:var(--warn)}
+  .check{display:flex;gap:8px;align-items:center;margin-top:10px}
+  .check input{width:auto}
+  .timeline{display:flex;flex-direction:column;gap:8px;margin:6px 0 14px}
+  .blk{display:grid;grid-template-columns:120px 1fr;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--line)}
+  .blk.drive{background:var(--chip)}
+  .blk .t{font-variant-numeric:tabular-nums;font-weight:600}
+  .blk small{color:var(--muted);display:block}
+  .foot{color:var(--muted);font-size:12.5px;margin-top:18px}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<main>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+    <div>
+      <h1>Apotheken-Fahrtplaner</h1>
+      <p class="sub">Apotheke suchen → Fahrzeit berechnen → Hin- und Rückfahrt als Terminblocker (.ics) herunterladen.</p>
+    </div>
+    <button id="installBtn" class="secondary" style="display:none;white-space:nowrap">⬇ Installieren</button>
+  </div>
+
+  <section class="card">
+    <h2>1 · Termin</h2>
+    <div class="grid">
+      <div><label for="date">Datum</label><input id="date" type="date"></div>
+      <div><label for="time">Uhrzeit</label><input id="time" type="time" value="10:00"></div>
+      <div><label for="dur">Termindauer (Min.)</label><input id="dur" type="number" min="5" step="5" value="20"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>2 · Apotheke finden</h2>
+    <div class="row">
+      <div><label for="q">Name der Apotheke</label><input id="q" placeholder="z. B. Löwen-Apotheke"></div>
+      <div><label for="city">Ort / PLZ</label><input id="city" placeholder="z. B. Gelsenkirchen"></div>
+      <button id="searchBtn">Suchen</button>
+    </div>
+    <div id="hits" class="hits"></div>
+    <div id="searchMsg" class="msg"></div>
+    <details style="margin-top:12px">
+      <summary style="cursor:pointer;color:var(--muted);font-size:13.5px">Adresse stattdessen manuell eingeben</summary>
+      <div class="row" style="margin-top:10px">
+        <div><label for="manName">Name</label><input id="manName" placeholder="Apotheke"></div>
+        <div style="flex:2"><label for="manAddr">Adresse</label><input id="manAddr" placeholder="Straße Nr., PLZ Ort"></div>
+        <button class="secondary" id="manBtn">Übernehmen</button>
+      </div>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>3 · Einstellungen</h2>
+    <div class="grid">
+      <div style="grid-column:1/-1"><label for="home">Start- und Zieladresse</label><input id="home" value="Am Luftschacht 44, 44869 Bochum"></div>
+      <div><label for="buffer">Puffer je Fahrt (Min.)</label><input id="buffer" type="number" min="0" step="5" value="15"></div>
+      <div><label for="traffic">Verkehrszuschlag (%)</label><input id="traffic" type="number" min="0" step="5" value="10"></div>
+      <div><label for="round">Blöcke aufrunden auf</label>
+        <select id="round"><option value="1">1 Min.</option><option value="5" selected>5 Min.</option><option value="15">15 Min.</option></select></div>
+      <div><label for="alarm">Erinnerung vor Abfahrt</label>
+        <select id="alarm"><option value="0">keine</option><option value="10" selected>10 Min.</option><option value="15">15 Min.</option><option value="30">30 Min.</option></select></div>
+    </div>
+    <label class="check"><input type="checkbox" id="incAppt"> Den Apothekentermin selbst ebenfalls in die ICS aufnehmen</label>
+  </section>
+
+  <section class="card">
+    <h2>4 · Ergebnis</h2>
+    <button id="calcBtn" disabled>Fahrzeit berechnen</button>
+    <div id="calcMsg" class="msg"></div>
+    <div id="result" style="display:none">
+      <div id="timeline" class="timeline"></div>
+      <div class="row">
+        <button id="dlBtn">ICS-Datei herunterladen</button>
+        <button class="secondary" id="mapBtn">Route in Google Maps öffnen</button>
+      </div>
+    </div>
+  </section>
+
+  <p class="foot">Adresssuche: OpenStreetMap (Photon / Nominatim). Fahrzeit: OSRM-Routing über OpenStreetMap, berechnet ohne Echtzeitverkehr. Deshalb gibt es den einstellbaren Verkehrszuschlag. Die Datei funktioniert lokal im Browser, es werden keine Daten gespeichert außer deinen Einstellungen im Browser.</p>
+</main>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const UA_EMAIL = ""; // optional: Kontakt-E-Mail für Nominatim
+  let home = null;      // {lat, lon, label}
+  let target = null;    // {name, address, lat, lon}
+  let plan = null;
+
+  // ---- Defaults & Persistenz ----
+  const tomorrow = new Date(Date.now() + 864e5);
+  $("date").value = tomorrow.toISOString().slice(0,10);
+  const PERSIST = ["home","buffer","traffic","round","alarm","dur"];
+  try {
+    const s = JSON.parse(localStorage.getItem("apoFahrt") || "{}");
+    PERSIST.forEach(k => { if (s[k] != null) $(k).value = s[k]; });
+    if (s.incAppt) $("incAppt").checked = true;
+  } catch(e){}
+  function persist(){
+    try {
+      const s = {}; PERSIST.forEach(k => s[k] = $(k).value); s.incAppt = $("incAppt").checked;
+      localStorage.setItem("apoFahrt", JSON.stringify(s));
+    } catch(e){}
+  }
+  document.querySelectorAll("input,select").forEach(el => el.addEventListener("change", persist));
+  $("home").addEventListener("change", () => { home = null; });
+
+  // ---- Geocoding ----
+  async function photon(q, extra=""){
+    const bias = home ? `&lat=${home.lat}&lon=${home.lon}` : "&lat=51.47&lon=7.15";
+    const r = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=8&lang=de${bias}${extra}`);
+    if (!r.ok) throw new Error("Photon " + r.status);
+    const j = await r.json();
+    return (j.features || []).map(f => {
+      const p = f.properties || {};
+      const street = [p.street, p.housenumber].filter(Boolean).join(" ");
+      const place = [p.postcode, p.city || p.town || p.village || p.locality || p.district].filter(Boolean).join(" ");
+      return { name: p.name || street || q, address: [street, place].filter(Boolean).join(", "),
+               lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
+               pharmacy: p.osm_value === "pharmacy" };
+    });
+  }
+  async function nominatim(q){
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=8&countrycodes=de&q=${encodeURIComponent(q)}${UA_EMAIL?"&email="+encodeURIComponent(UA_EMAIL):""}`);
+    if (!r.ok) throw new Error("Nominatim " + r.status);
+    const j = await r.json();
+    return j.map(x => {
+      const a = x.address || {};
+      const street = [a.road, a.house_number].filter(Boolean).join(" ");
+      const place = [a.postcode, a.city || a.town || a.village || a.suburb].filter(Boolean).join(" ");
+      return { name: x.name || street || q, address: [street, place].filter(Boolean).join(", ") || x.display_name,
+               lat: +x.lat, lon: +x.lon, pharmacy: x.type === "pharmacy" };
+    });
+  }
+  async function geocode(q, pharmacyOnly){
+    let res = [];
+    try {
+      if (pharmacyOnly) res = await photon(q, "&osm_tag=amenity:pharmacy");
+      if (!res.length) res = await photon(q);
+    } catch(e){ console.warn(e); }
+    if (!res.length) { try { res = await nominatim(q); } catch(e){ console.warn(e); } }
+    return res;
+  }
+  async function ensureHome(){
+    if (home) return home;
+    const label = $("home").value.trim();
+    try {
+      const c = JSON.parse(localStorage.getItem("apoFahrtHome") || "null");
+      if (c && c.label === label) return (home = c);
+    } catch(e){}
+    const r = await geocode(label, false);
+    if (!r.length) throw new Error("Startadresse wurde nicht gefunden: " + label);
+    home = { lat: r[0].lat, lon: r[0].lon, label };
+    try { localStorage.setItem("apoFahrtHome", JSON.stringify(home)); } catch(e){}
+    return home;
+  }
+
+  // ---- Suche UI ----
+  function setMsg(id, text, cls=""){ const m=$(id); m.textContent=text; m.className="msg "+cls; }
+  function selectTarget(t, el){
+    target = t;
+    document.querySelectorAll(".hit").forEach(h => h.classList.remove("sel"));
+    if (el) { el.classList.add("sel"); el.querySelector("input").checked = true; }
+    $("calcBtn").disabled = false;
+    $("result").style.display = "none";
+    setMsg("calcMsg", `Ziel: ${t.name}, ${t.address}`);
+  }
+  async function doSearch(){
+    const q = $("q").value.trim(), city = $("city").value.trim();
+    if (!q) { setMsg("searchMsg","Bitte einen Apothekennamen eingeben.","warn"); return; }
+    $("searchBtn").disabled = true; $("hits").innerHTML = ""; setMsg("searchMsg","Suche läuft …");
+    try {
+      try { await ensureHome(); } catch(e){}
+      const query = /apotheke/i.test(q) ? `${q} ${city}` : `${q} Apotheke ${city}`;
+      let res = await geocode(query.trim(), true);
+      res.sort((a,b) => (b.pharmacy - a.pharmacy));
+      if (!res.length) { setMsg("searchMsg","Nichts gefunden. Probiere eine andere Schreibweise oder gib die Adresse manuell ein.","warn"); return; }
+      setMsg("searchMsg", res.length === 1 ? "1 Treffer – bitte prüfen." : `${res.length} Treffer – bitte die richtige Apotheke wählen.`);
+      res.forEach((t,i) => {
+        const el = document.createElement("label");
+        el.className = "hit";
+        el.innerHTML = `<input type="radio" name="hit"><span><b></b><small></small></span>`;
+        el.querySelector("b").textContent = t.name + (t.pharmacy ? "" : "  (kein Apotheken-Eintrag)");
+        el.querySelector("small").textContent = t.address || `${t.lat.toFixed(5)}, ${t.lon.toFixed(5)}`;
+        el.addEventListener("click", () => selectTarget(t, el));
+        $("hits").appendChild(el);
+        if (i === 0) selectTarget(t, el);
+      });
+    } catch(e){
+      setMsg("searchMsg","Suche fehlgeschlagen: " + e.message,"err");
+    } finally { $("searchBtn").disabled = false; }
+  }
+  $("searchBtn").addEventListener("click", doSearch);
+  ["q","city"].forEach(id => $(id).addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); }));
+
+  $("manBtn").addEventListener("click", async () => {
+    const addr = $("manAddr").value.trim(); if (!addr) return;
+    setMsg("searchMsg","Adresse wird gesucht …");
+    const r = await geocode(addr, false);
+    if (!r.length) { setMsg("searchMsg","Adresse nicht gefunden.","err"); return; }
+    $("hits").innerHTML = "";
+    selectTarget({ name: $("manName").value.trim() || "Apotheke", address: addr, lat: r[0].lat, lon: r[0].lon });
+    setMsg("searchMsg","Manuelle Adresse übernommen.");
+  });
+
+  // ---- Routing ----
+  async function route(a, b){
+    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${a.lon},${a.lat};${b.lon},${b.lat}?overview=false`);
+    if (!r.ok) throw new Error("Routing " + r.status);
+    const j = await r.json();
+    if (j.code !== "Ok" || !j.routes || !j.routes.length) throw new Error("Keine Route gefunden");
+    return { sec: j.routes[0].duration, km: j.routes[0].distance / 1000 };
+  }
+
+  const fmt = d => d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
+  const ceilTo = (m, step) => Math.ceil(m / step) * step;
+
+  $("calcBtn").addEventListener("click", async () => {
+    if (!target) return;
+    const date = $("date").value, time = $("time").value;
+    if (!date || !time) { setMsg("calcMsg","Bitte Datum und Uhrzeit des Termins angeben.","warn"); return; }
+    $("calcBtn").disabled = true; setMsg("calcMsg","Fahrzeit wird berechnet …");
+    try {
+      const h = await ensureHome();
+      const [out, back] = await Promise.all([route(h, target), route(target, h)]);
+      const buffer = +$("buffer").value || 0, traffic = +$("traffic").value || 0, step = +$("round").value || 1;
+      const dur = +$("dur").value || 20;
+      const mk = r => {
+        const drive = Math.ceil(r.sec / 60 * (1 + traffic/100));
+        return { raw: Math.round(r.sec/60), drive, km: r.km, total: ceilTo(drive + buffer, step) };
+      };
+      const o = mk(out), b = mk(back);
+      const apptStart = new Date(`${date}T${time}`);
+      const apptEnd = new Date(apptStart.getTime() + dur*6e4);
+      plan = {
+        o, b, buffer, traffic, apptStart, apptEnd,
+        depart: new Date(apptStart.getTime() - o.total*6e4),
+        homeArr: new Date(apptEnd.getTime() + b.total*6e4),
+      };
+      renderPlan();
+      setMsg("calcMsg","");
+    } catch(e){
+      setMsg("calcMsg","Berechnung fehlgeschlagen: " + e.message + ". Prüfe die Internetverbindung oder versuche es gleich noch einmal.","err");
+    } finally { $("calcBtn").disabled = false; }
+  });
+
+  function driveText(x){
+    return `${x.drive} Min. Fahrt (${x.km.toFixed(1).replace(".",",")} km`
+      + (plan.traffic ? `, Route ${x.raw} Min. + ${plan.traffic} % Verkehr` : "")
+      + `) + ${plan.buffer} Min. Puffer`;
+  }
+  function renderPlan(){
+    const p = plan, tl = $("timeline"); tl.innerHTML = "";
+    const add = (cls, t, title, sub) => {
+      const d = document.createElement("div"); d.className = "blk " + cls;
+      d.innerHTML = `<div class="t"></div><div><b></b><small></small></div>`;
+      d.querySelector(".t").textContent = t; d.querySelector("b").textContent = title; d.querySelector("small").textContent = sub;
+      tl.appendChild(d);
+    };
+    add("drive", `${fmt(p.depart)} – ${fmt(p.apptStart)}`, `Anfahrt · Block ${p.o.total} Min.`, driveText(p.o));
+    add("", `${fmt(p.apptStart)} – ${fmt(p.apptEnd)}`, `Termin ${target.name}`, target.address + ($("incAppt").checked ? "" : "  (nicht in der ICS enthalten)"));
+    add("drive", `${fmt(p.apptEnd)} – ${fmt(p.homeArr)}`, `Rückfahrt · Block ${p.b.total} Min.`, driveText(p.b));
+    $("result").style.display = "block";
+  }
+  $("incAppt").addEventListener("change", () => { if (plan) renderPlan(); });
+
+  // ---- ICS ----
+  const icsDate = d => d.toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,"");
+  const esc = s => String(s).replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\r?\n/g,"\\n");
+  function fold(line){
+    const enc = new TextEncoder(); if (enc.encode(line).length <= 75) return line;
+    const out = []; let cur = "", lim = 75;
+    for (const ch of line) {
+      if (enc.encode(cur + ch).length > lim) { out.push(cur); cur = " " + ch; lim = 75; }
+      else cur += ch;
+    }
+    out.push(cur); return out.join("\r\n");
+  }
+  function vevent(start, end, summary, location, desc, alarmMin){
+    const uid = (crypto.randomUUID ? crypto.randomUUID() : Date.now()+"-"+Math.random().toString(36).slice(2)) + "@apotheken-fahrtplaner";
+    const L = ["BEGIN:VEVENT", `UID:${uid}`, `DTSTAMP:${icsDate(new Date())}`,
+      `DTSTART:${icsDate(start)}`, `DTEND:${icsDate(end)}`,
+      `SUMMARY:${esc(summary)}`, `LOCATION:${esc(location)}`, `DESCRIPTION:${esc(desc)}`,
+      "TRANSP:OPAQUE", "STATUS:CONFIRMED"];
+    if (alarmMin > 0) L.push("BEGIN:VALARM","ACTION:DISPLAY",`DESCRIPTION:${esc(summary)}`,`TRIGGER:-PT${alarmMin}M`,"END:VALARM");
+    L.push("END:VEVENT"); return L;
+  }
+  function mapsLink(fromLabel, toLabel){
+    return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(fromLabel)}&destination=${encodeURIComponent(toLabel)}&travelmode=driving`;
+  }
+  function buildIcs(){
+    const p = plan, homeL = $("home").value.trim();
+    const tgtL = `${target.name}, ${target.address}`;
+    const alarm = +$("alarm").value || 0;
+    const lines = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Apotheken-Fahrtplaner//DE","CALSCALE:GREGORIAN","METHOD:PUBLISH"];
+    lines.push(...vevent(p.depart, p.apptStart,
+      `🚗 Anfahrt ${target.name} (${p.o.drive} Min. + ${p.buffer} Puffer)`,
+      tgtL,
+      `Abfahrt: ${fmt(p.depart)} Uhr\nKalkulierte Fahrzeit: ${driveText(p.o)}\nBlock gesamt: ${p.o.total} Min.\nVon: ${homeL}\nNach: ${tgtL}\nTermin: ${fmt(p.apptStart)} Uhr\nRoute: ${mapsLink(homeL, tgtL)}`,
+      alarm));
+    if ($("incAppt").checked) lines.push(...vevent(p.apptStart, p.apptEnd, `Termin ${target.name}`, tgtL, `Apothekentermin\n${tgtL}`, 0));
+    lines.push(...vevent(p.apptEnd, p.homeArr,
+      `🚗 Rückfahrt von ${target.name} (${p.b.drive} Min. + ${p.buffer} Puffer)`,
+      homeL,
+      `Kalkulierte Fahrzeit: ${driveText(p.b)}\nBlock gesamt: ${p.b.total} Min.\nVoraussichtlich zu Hause: ${fmt(p.homeArr)} Uhr\nVon: ${tgtL}\nNach: ${homeL}\nRoute: ${mapsLink(tgtL, homeL)}`,
+      0));
+    lines.push("END:VCALENDAR");
+    return lines.map(fold).join("\r\n") + "\r\n";
+  }
+  async function saveIcsViaCapability(filename, blob){
+    if (!window.claude || !window.claude.use) return false;
+    try {
+      const downloads = await window.claude.use("downloads");
+      if (!downloads) return false;
+      await downloads.save({ filename, data: blob });
+      return true;
+    } catch(e){
+      if (e && e.code === "declined") return true; // Nutzer hat bewusst abgelehnt
+      console.warn("downloads-Capability fehlgeschlagen:", e);
+      return false;
+    }
+  }
+  function saveIcsViaAnchor(filename, blob){
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+  $("dlBtn").addEventListener("click", async () => {
+    if (!plan) return;
+    const blob = new Blob([buildIcs()], { type: "text/calendar;charset=utf-8" });
+    const safe = target.name.replace(/[^\wäöüÄÖÜß-]+/g,"_").replace(/_+/g,"_");
+    const filename = `Fahrt_${safe}_${$("date").value}.ics`;
+    const ok = await saveIcsViaCapability(filename, blob);
+    if (!ok) saveIcsViaAnchor(filename, blob);
+  });
+  $("mapBtn").addEventListener("click", () => {
+    if (!target) return;
+    window.open(mapsLink($("home").value.trim(), `${target.name}, ${target.address}`), "_blank");
+  });
+
+  // Für Tests
+  window.__apo = { buildIcs, fold, esc, icsDate, setState: (t, p) => { target = t; plan = p; } };
+
+  // ---- PWA: Service Worker + Installierbarkeit ----
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch(e => console.warn("SW-Registrierung fehlgeschlagen:", e));
+    });
+  }
+  let deferredInstall = null;
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredInstall = e;
+    $("installBtn").style.display = "inline-block";
+  });
+  $("installBtn").addEventListener("click", async () => {
+    if (!deferredInstall) return;
+    deferredInstall.prompt();
+    await deferredInstall.userChoice;
+    deferredInstall = null;
+    $("installBtn").style.display = "none";
+  });
+  window.addEventListener("appinstalled", () => { $("installBtn").style.display = "none"; });
+})();
+</script>
+</body>
+</html>
